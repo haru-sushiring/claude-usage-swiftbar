@@ -82,7 +82,13 @@ def get_token() -> str | None:
 
 
 def fetch_usage(token: str) -> dict | None:
-    """Fetch usage data from Anthropic API."""
+    """Fetch usage data from Anthropic API.
+    
+    Returns:
+        dict with usage data on success,
+        dict with {"_rate_limited": True, "_retry_after": seconds} on 429,
+        None on other errors.
+    """
     req = urllib.request.Request(API_URL, headers={
         "Accept": "application/json",
         "Content-Type": "application/json",
@@ -93,6 +99,11 @@ def fetch_usage(token: str) -> dict | None:
     try:
         with urllib.request.urlopen(req, timeout=10) as resp:
             return json.loads(resp.read().decode())
+    except urllib.error.HTTPError as e:
+        if e.code == 429:
+            retry_after = int(e.headers.get("retry-after", 0))
+            return {"_rate_limited": True, "_retry_after": retry_after}
+        return None
     except Exception:
         return None
 
@@ -115,6 +126,23 @@ def main():
         print("---")
         print("⚠️ API接続エラー | color=#FF4444")
         print("ネットワーク接続を確認してください | color=#888888")
+        return
+
+    # Handle 429 rate limited
+    if data.get("_rate_limited"):
+        retry_after = data.get("_retry_after", 0)
+        hours, minutes = divmod(retry_after // 60, 60)
+        if hours > 0:
+            reset_str = f"{hours}時間{minutes}分後"
+        else:
+            reset_str = f"{minutes}分後"
+        print(f"🔴 制限中 | color=#FF4444 size=13")
+        print("---")
+        print(f"⚠️ レート制限に達しています | color=#FF4444 size=13")
+        print(f"  リセット: {reset_str} | size=12 color=#888888")
+        print("---")
+        print("使用状況ページを開く | href=https://claude.ai/settings/usage")
+        print("🔄 更新 | refresh=true")
         return
 
     # Parse usage data
